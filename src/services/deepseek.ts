@@ -28,36 +28,45 @@ const VALID_ACTIONS = new Set<ToolAction>([
 ]);
 
 // ─── Tool Definitions (sent to DeepSeek) ──────────────────────────────────────
+//
+// Tool descriptions are the primary prompt for the model — they must be
+// unambiguous decision trees, not vague summaries.
 
 const AGENT_TOOLS: DeepSeekTool[] = [
   {
     type: "function",
     function: {
       name: "book_appointment",
-      description:
-        "Book a new appointment for the caller. Call this when the user explicitly wants to schedule, book, or make an appointment.",
+      description: [
+        "USE when: caller explicitly says they want to book, make, schedule, or fix an appointment.",
+        "DO NOT use if any required field (date, time, service) is still unknown — use 'talk' to collect it first.",
+        "DO NOT invent or assume values the caller has not stated.",
+      ].join(" "),
       parameters: {
         type: "object",
         properties: {
-          name: { type: "string", description: "Full name of the caller" },
           date: {
             type: "string",
-            description: "Desired date in ISO 8601 format (YYYY-MM-DD)",
+            description:
+              "Appointment date stated by the caller. ISO 8601 format YYYY-MM-DD. REQUIRED — do not call this tool without it.",
           },
           time: {
             type: "string",
-            description: "Desired time in HH:MM (24h) format",
+            description:
+              "Appointment time stated by the caller. HH:MM 24h format. REQUIRED — do not call this tool without it.",
           },
-          topic: {
+          service: {
             type: "string",
-            description: "Topic or reason for the appointment",
+            description:
+              "Service or reason for the appointment as stated by the caller. REQUIRED.",
           },
-          phone: {
+          response: {
             type: "string",
-            description: "Callback phone number of the caller",
+            description:
+              "Short spoken confirmation sentence read aloud to the caller after booking. Max 2 sentences.",
           },
         },
-        required: [],
+        required: ["date", "time", "service", "response"],
       },
     },
   },
@@ -65,25 +74,26 @@ const AGENT_TOOLS: DeepSeekTool[] = [
     type: "function",
     function: {
       name: "check_availability",
-      description:
-        "Check available appointment slots. Use this when the caller asks about free times, availability, or open slots before committing to a booking.",
+      description: [
+        "USE when: caller asks whether a specific date or time is free, available, or open.",
+        "USE when: caller says 'when can I come in' or 'what slots do you have'.",
+        "DO NOT use for actual booking — only for querying free slots.",
+      ].join(" "),
       parameters: {
         type: "object",
         properties: {
           date: {
             type: "string",
-            description: "Date to check in ISO 8601 format (YYYY-MM-DD)",
+            description:
+              "Date to check as stated by the caller. ISO 8601 YYYY-MM-DD. REQUIRED.",
           },
-          time_from: {
+          response: {
             type: "string",
-            description: "Start of desired time window in HH:MM",
-          },
-          time_to: {
-            type: "string",
-            description: "End of desired time window in HH:MM",
+            description:
+              "Short spoken sentence telling the caller you are checking. Max 1 sentence.",
           },
         },
-        required: [],
+        required: ["date", "response"],
       },
     },
   },
@@ -91,18 +101,26 @@ const AGENT_TOOLS: DeepSeekTool[] = [
     type: "function",
     function: {
       name: "faq",
-      description:
-        "Answer a frequently asked question about the business, services, prices, hours, or policies. Use this whenever the caller asks an informational question.",
+      description: [
+        "USE when: caller asks a factual question about the business — prices, hours, address, services offered, parking, payment methods, cancellation policy.",
+        "USE when: caller asks 'how much', 'where', 'when are you open', 'do you offer', 'what is'.",
+        "DO NOT use for booking or availability checks.",
+      ].join(" "),
       parameters: {
         type: "object",
         properties: {
-          query: {
+          question: {
             type: "string",
             description:
-              "The caller's question rephrased as a concise search query",
+              "The caller's question verbatim or closely paraphrased. REQUIRED.",
+          },
+          response: {
+            type: "string",
+            description:
+              "Short spoken bridge while the answer is being looked up. Max 1 sentence.",
           },
         },
-        required: ["query"],
+        required: ["question", "response"],
       },
     },
   },
@@ -110,18 +128,23 @@ const AGENT_TOOLS: DeepSeekTool[] = [
     type: "function",
     function: {
       name: "talk",
-      description:
-        "Produce a spoken response to the caller with no external side-effects. Use this for greetings, clarifying questions, confirmations, and any response that does not require booking or lookup.",
+      description: [
+        "USE when: none of the other three tools apply.",
+        "USE when: you need to greet, say goodbye, ask for missing information, confirm an action, or handle an unclear intent.",
+        "USE when: you are missing required fields for book_appointment or check_availability.",
+        "FORBIDDEN: do not use 'talk' to answer factual business questions — use 'faq' instead.",
+        "FORBIDDEN: do not use 'talk' to confirm a booking — use 'book_appointment' instead.",
+      ].join(" "),
       parameters: {
         type: "object",
         properties: {
-          text: {
+          response: {
             type: "string",
             description:
-              "The exact text that will be spoken aloud to the caller",
+              "Spoken text read aloud to the caller. Must be natural, conversational, and concise. Max 2 sentences. REQUIRED.",
           },
         },
-        required: ["text"],
+        required: ["response"],
       },
     },
   },
@@ -129,24 +152,38 @@ const AGENT_TOOLS: DeepSeekTool[] = [
 
 // ─── System Prompt ────────────────────────────────────────────────────────────
 
-const SYSTEM_PROMPT = `You are a professional AI phone receptionist. Your only job is to assist callers by using exactly one of the four available tools per turn.
+const SYSTEM_PROMPT = `\
+IDENTITY
+You are the phone receptionist of a business. You speak directly to callers over the phone.
 
-STRICT RULES — follow these without exception:
-1. You MUST always call exactly one tool. Never reply with plain text.
-2. Choose the tool whose description best matches the caller's intent.
-3. If unsure, use the "talk" tool to ask a clarifying question.
-4. Extract arguments from the conversation context. Never invent data you have not heard.
-5. The "text" field in the "talk" tool must be natural spoken German (or match the caller's language). Keep it short — one to two sentences maximum.
-6. Never mention that you are an AI unless directly asked.
-7. Never hallucinate appointment IDs, dates, or phone numbers.
+OUTPUT FORMAT — ABSOLUTE RULE
+You MUST call exactly one tool per turn. Plain text replies are forbidden.
+Every tool has a "response" field — always fill it with the sentence spoken aloud to the caller.
 
-TOOL SELECTION GUIDE:
-- Caller wants to make/book/schedule an appointment → book_appointment
-- Caller asks about free times or available slots → check_availability
-- Caller asks an informational question (hours, prices, address, etc.) → faq
-- Everything else (greetings, clarifications, goodbyes, unknown intent) → talk
+TOOL SELECTION — FOLLOW THIS ORDER
+1. Caller wants to book/schedule → book_appointment
+   └─ Only if date + time + service are known. Otherwise → talk to collect them.
+2. Caller asks about free slots / availability → check_availability
+   └─ Only if a date is known. Otherwise → talk to ask for it.
+3. Caller asks a factual question about the business → faq
+4. Everything else (greeting, goodbye, unclear, missing info) → talk
 
-LANGUAGE: Reply in the same language the caller uses. Default to German.`.trim();
+STRICT PROHIBITIONS
+- NEVER invent dates, times, names, prices, or IDs the caller has not stated.
+- NEVER reply with free text — always call a tool.
+- NEVER call book_appointment if date, time, or service is missing.
+- NEVER repeat the same clarifying question twice — rephrase or escalate.
+- NEVER reveal that you are an AI unless the caller directly asks.
+- NEVER produce responses longer than 2 sentences.
+
+RESPONSE STYLE
+- Short. Direct. Spoken German by default, mirror the caller's language.
+- Sound human and friendly — no robotic filler phrases.
+- One piece of information per sentence.
+
+MISSING DATA HANDLING
+If a required field is absent, ask for exactly one missing field at a time using "talk".
+Example: date unknown → ask only for the date, not time and service at the same time.`.trim();
 
 // ─── Safe JSON Parsing ────────────────────────────────────────────────────────
 

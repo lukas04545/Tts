@@ -6,26 +6,27 @@ export type ToolAction =
   | "faq"
   | "talk";
 
+// "response" is the spoken sentence read aloud to the caller — present in every tool.
+
 export interface BookAppointmentArgs {
-  name?: string;
-  date?: string;        // ISO 8601 e.g. "2026-06-05"
-  time?: string;        // "HH:MM"
-  topic?: string;
-  phone?: string;
+  date: string;         // ISO 8601 YYYY-MM-DD — required by prompt
+  time: string;         // HH:MM 24h — required by prompt
+  service: string;      // reason / service type — required by prompt
+  response: string;     // spoken confirmation sentence
 }
 
 export interface CheckAvailabilityArgs {
-  date?: string;
-  time_from?: string;
-  time_to?: string;
+  date: string;         // ISO 8601 YYYY-MM-DD — required by prompt
+  response: string;     // spoken bridge sentence
 }
 
 export interface FaqArgs {
-  query: string;
+  question: string;     // caller's question verbatim or paraphrased
+  response: string;     // spoken bridge while answer is looked up
 }
 
 export interface TalkArgs {
-  text: string;         // Direct spoken response — no tool side-effect needed
+  response: string;     // spoken text — the only output channel for this tool
 }
 
 export type ToolArguments =
