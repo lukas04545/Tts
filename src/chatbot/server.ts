@@ -74,8 +74,9 @@ textarea:focus{border-color:var(--acc)}
 .chip{background:var(--surf);border:1px solid var(--brd);border-radius:7px;padding:7px 10px;font-size:11px;display:flex;align-items:center;gap:5px;cursor:pointer;transition:border .15s}
 .chip:hover{border-color:var(--acc)}
 /* ── Council sidebar ── */
-.member-row{display:flex;gap:5px;align-items:center}
-.member-row select{flex:1;min-width:0;font-size:11px;padding:5px 6px}
+.member-row{display:flex;flex-direction:column;gap:5px;background:var(--bg);border:1px solid var(--brd);border-radius:8px;padding:8px}
+.member-top{display:flex;gap:5px;align-items:center}
+.member-row select{width:100%;font-size:12px;padding:6px 8px}
 .rm-btn{background:transparent;border:1px solid var(--brd);color:var(--dim);border-radius:6px;padding:5px 8px;cursor:pointer;font-size:11px;flex-shrink:0;transition:all .15s;line-height:1}
 .rm-btn:hover{border-color:var(--err);color:var(--err)}
 .add-btn{background:transparent;border:1px dashed var(--brd);color:var(--dim);border-radius:7px;padding:7px;cursor:pointer;font-size:12px;width:100%;transition:all .15s;text-align:center}
@@ -205,6 +206,7 @@ textarea:focus{border-color:var(--acc)}
         </div>
       </div>
       <div class="inp">
+        <div id="inp-err" style="display:none;color:var(--err);font-size:12px;padding:0 2px 6px;text-align:center"></div>
         <div class="form">
           <div class="inp-wrap"><textarea id="tinp" placeholder="Type a message... (Enter to send, Shift+Enter for newline)" rows="1"></textarea></div>
           <button class="send" id="sbtn" onclick="send()">Send</button>
@@ -222,6 +224,7 @@ textarea:focus{border-color:var(--acc)}
       </div>
       <div class="inp">
         <div class="form">
+        <div id="c-inp-err" style="display:none;color:var(--err);font-size:12px;padding:0 2px 6px;text-align:center"></div>
           <div class="inp-wrap"><textarea id="c-tinp" placeholder="Enter a prompt for the council to discuss... (Enter to send)" rows="1"></textarea></div>
           <button class="c-send" id="c-sbtn" onclick="submitCouncil()">Ask Council</button>
         </div>
@@ -242,6 +245,22 @@ function sve(id,o){localStorage.setItem('e_'+id,JSON.stringify(o))}
 
 /* ── HTML escape ── */
 function esc(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}
+
+/* ── Inline error helpers ── */
+function showSendErr(msg){
+  var el=document.getElementById('inp-err');
+  if(!el)return;
+  el.textContent=msg;
+  el.style.display='block';
+  setTimeout(function(){el.style.display='none'},3500);
+}
+function showCouncilErr(msg){
+  var el=document.getElementById('c-inp-err');
+  if(!el)return;
+  el.textContent=msg;
+  el.style.display='block';
+  setTimeout(function(){el.style.display='none'},3500);
+}
 
 /* ── Mode switching ── */
 function setMode(m){
@@ -298,12 +317,16 @@ async function init(){
     c.onclick=function(){document.getElementById('prov').value=p.id;onProv()};
     chips.appendChild(c);
   });
+
+  /* Auto-select first provider so model dropdown is immediately usable */
+  if(ps.length>0){sel.value=ps[0].id;onProv()}
 }
 
 function onProv(){
   var id=document.getElementById('prov').value;
   if(!id)return;
   var p=providers[id];
+  if(!p)return;
 
   var ms=document.getElementById('model');
   ms.innerHTML='';
@@ -418,8 +441,8 @@ async function send(){
   var mtok=parseInt(document.getElementById('mtok').value);
 
   if(!text)return;
-  if(!id){alert('Please select a provider');return}
-  if(!model){alert('Please select a model');return}
+  if(!id){showSendErr('Please select a provider first');return}
+  if(!model){showSendErr('Please select a model first');return}
 
   var p=providers[id];
   var extra={};
@@ -503,7 +526,10 @@ function renderMembers(){
     var row=document.createElement('div');
     row.className='member-row';
 
-    /* provider select */
+    /* top line: provider label + remove button */
+    var topLine=document.createElement('div');
+    topLine.className='member-top';
+
     var ps=document.createElement('select');
     Object.values(providers).forEach(function(p){
       var o=document.createElement('option');
@@ -513,32 +539,36 @@ function renderMembers(){
     });
     ps.onchange=function(){updateMember(i,'prov',this.value)};
 
-    /* model select */
+    var rb=document.createElement('button');
+    rb.className='rm-btn'; rb.textContent='&#x2715;';
+    rb.onclick=function(){removeMember(i)};
+
+    topLine.appendChild(ps);
+    topLine.appendChild(rb);
+
+    /* model select row */
     var ms=document.createElement('select');
     var prov=providers[m.providerId];
     if(prov&&prov.models){
       prov.models.forEach(function(mod){
         var o=document.createElement('option');
-        o.value=mod.id; o.textContent=mod.name;
+        o.value=mod.id; o.textContent=mod.name+(mod.notes?' ('+mod.notes+')':'');
         if(mod.id===m.model)o.selected=true;
         ms.appendChild(o);
       });
     }
     ms.onchange=function(){updateMember(i,'mod',this.value)};
 
-    /* no-key warning */
     var hasKey=sk(m.providerId)||(providers[m.providerId]&&providers[m.providerId].hasServerKey);
-    var warn=hasKey?'':'<span class="no-key" title="No API key — set one in Chat tab">&#9888;</span>';
 
-    /* remove button */
-    var rb=document.createElement('button');
-    rb.className='rm-btn'; rb.textContent='&#x2715;';
-    rb.onclick=function(){removeMember(i)};
-
-    row.appendChild(ps);
+    row.appendChild(topLine);
     row.appendChild(ms);
-    if(!hasKey){var ws=document.createElement('span'); ws.className='no-key'; ws.title='No API key — set one in Chat tab'; ws.textContent='!'; row.appendChild(ws)}
-    row.appendChild(rb);
+    if(!hasKey){
+      var ws=document.createElement('span');
+      ws.className='no-key'; ws.title='No API key — set one in Chat tab';
+      ws.textContent='&#9888; No key — set in Chat tab';
+      row.appendChild(ws);
+    }
     list.appendChild(row);
   });
 
@@ -678,7 +708,7 @@ async function submitCouncil(){
   if(cLoading)return;
   var prompt=cta.value.trim();
   if(!prompt)return;
-  if(cMembers.length<2){alert('Add at least 2 council members in the sidebar.');return}
+  if(cMembers.length<2){showCouncilErr('Add at least 2 council members in the sidebar.');return}
 
   var members=cMembers.map(function(m){
     return{providerId:m.providerId,model:m.model,apiKey:sk(m.providerId),extraConfig:se(m.providerId)};
