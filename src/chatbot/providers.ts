@@ -140,6 +140,26 @@ function makeCloudflare(info: ProviderInfo): Provider {
 // ─── All Providers ─────────────────────────────────────────────────────────────
 
 export const ALL_PROVIDERS: Provider[] = [
+  // ── OpenAI ──────────────────────────────────────────────────────────────────
+  makeOAI({
+    id: "openai",
+    name: "OpenAI",
+    homepage: "https://platform.openai.com/",
+    baseUrl: "https://api.openai.com/v1",
+    envVar: "OPENAI_API_KEY",
+    rateLimits: "Depends on usage tier",
+    notes: "Requires paid account. GPT-4o Mini is cheapest option.",
+    models: [
+      { id: "gpt-4o-mini", name: "GPT-4o Mini" },
+      { id: "gpt-4o", name: "GPT-4o" },
+      { id: "gpt-4.1-mini", name: "GPT-4.1 Mini" },
+      { id: "gpt-4.1", name: "GPT-4.1" },
+      { id: "o1-mini", name: "o1 Mini" },
+      { id: "o1", name: "o1" },
+      { id: "o3-mini", name: "o3 Mini" },
+    ],
+  }),
+
   // ── OpenRouter ──────────────────────────────────────────────────────────────
   makeOAI(
     {
