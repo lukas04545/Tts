@@ -4,8 +4,9 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "start": "ts-node src/chatbot/index.ts",
-    "chat": "ts-node src/chatbot/index.ts",
+    "build": "tsc",
+    "start": "node dist/chatbot/index.js",
+    "dev": "ts-node src/chatbot/index.ts",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "repository": {

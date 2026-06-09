@@ -1,4 +1,5 @@
 import http from "http";
+import os from "os";
 import type { IncomingMessage, ServerResponse } from "http";
 import { PROVIDERS, ALL_PROVIDERS } from "./providers";
 import type { ChatRequest, ProviderInfo } from "./types";
@@ -472,16 +473,34 @@ export function createServer(): http.Server {
   });
 }
 
+function getLocalIP(): string {
+  const ifaces = os.networkInterfaces();
+  for (const name of Object.keys(ifaces)) {
+    for (const iface of (ifaces[name] ?? [])) {
+      if (iface.family === "IPv4" && !iface.internal) {
+        return iface.address;
+      }
+    }
+  }
+  return "localhost";
+}
+
 export function startServer(): void {
   const server = createServer();
-  server.listen(PORT, () => {
-    console.log(`\n🤖  Free LLM Chatbot`);
-    console.log(`    http://localhost:${PORT}\n`);
-    console.log(`Configured providers:`);
+  const host = process.env["HOST"] ?? "0.0.0.0";
+  server.listen(PORT, host, () => {
+    const ip = getLocalIP();
+    console.log(`\n🤖  Free LLM Chatbot is running!\n`);
+    console.log(`  Local:   http://localhost:${PORT}`);
+    if (ip !== "localhost") {
+      console.log(`  Network: http://${ip}:${PORT}  (open this in your browser)`);
+    }
+    console.log(`\nConfigured providers (env vars):`);
     ALL_PROVIDERS.forEach((p) => {
       const hasKey = !!process.env[p.info.envVar];
-      console.log(`  ${hasKey ? "✓" : "○"} ${p.info.name} (${p.info.envVar})`);
+      console.log(`  ${hasKey ? "✓" : "○"} ${p.info.name}`);
     });
-    console.log(`\nProviders without an env key can still be used by entering a key in the UI.\n`);
+    console.log(`\nProviders without a key can still be used — enter the key in the web UI.\n`);
+    console.log(`Press Ctrl+C to stop.\n`);
   });
 }
